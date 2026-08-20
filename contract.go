@@ -187,6 +187,9 @@ func FindNilContracts(comments []Comment) []NilFinding {
 		if nilFormRe.MatchString(c.Text) {
 			continue
 		}
+		if errorOnly(c.Results) {
+			continue
+		}
 		flat := strings.Join(strings.Fields(c.Text), " ")
 		m := nilProseRe.FindString(flat)
 		if m == "" {
@@ -223,6 +226,33 @@ func (f NilFinding) String(rel func(string) string) string {
 	fmt.Fprintf(&sb, "    ├ suggested: Nil: %s — <why>\n", f.Kind)
 	fmt.Fprintf(&sb, "    │ %s\n", wrapExcerpt(f.C.Text))
 	return sb.String()
+}
+
+// resultsOf returns the leaf type names of a function's results.
+func resultsOf(fn *ast.FuncDecl) []string {
+	if fn.Type == nil || fn.Type.Results == nil {
+		return nil
+	}
+	var out []string
+	for _, f := range fn.Type.Results.List {
+		t := leafTypeName(f.Type)
+		n := len(f.Names)
+		if n == 0 {
+			n = 1
+		}
+		for range n {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// errorOnly reports whether a function's only result is error. "Returns nil if
+// the config is valid" on such a function is Go's universal error idiom, not a
+// statement about nil-ness — it was the entire false-positive class in a
+// 12-finding spot check (4/12).
+func errorOnly(results []string) bool {
+	return len(results) == 1 && results[0] == "error"
 }
 
 // paramsOf returns the parameter names and type names of a function

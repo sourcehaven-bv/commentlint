@@ -48,6 +48,7 @@ type Comment struct {
 	Ident       string   // identifier it documents, if any
 	Scope       []string // identifier tokens in scope at this position
 	Params      []Param  // parameters, when this documents a func decl
+	Results     []string // result leaf type names, when this documents a func decl
 	Lines       int
 	File        string
 	LineNo      int
@@ -98,6 +99,7 @@ func collectComments(fset *token.FileSet, f *ast.File, filename string) []Commen
 			c := mkComment(fset, g, lvl, ident, scope, filename)
 			if fd, ok := node.(*ast.FuncDecl); ok && fd.Doc == g {
 				c.Params = paramsOf(fd)
+				c.Results = resultsOf(fd)
 			}
 			out = append(out, c)
 		}

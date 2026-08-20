@@ -128,6 +128,12 @@ Bare `non-nil` is deliberately NOT matched. It is overwhelmingly used to draw
 the nil-vs-empty-slice distinction, which describes decoding behaviour rather
 than stating a caller contract; matching it produced 93 false positives.
 
+Functions whose only result is `error` are skipped: "returns nil if the config
+is valid" there is Go's universal error idiom, not a nil contract. This is a
+small population (2 of 46 `returns nil if/when` comments in the corpus) but a
+pure false-positive class. Everything else matched by that phrasing returns a
+pointer, map or interface, where nil genuinely is a documented outcome.
+
 The rule converges: a comment carrying a `Nil:` tag is skipped, so fixing one
 removes it permanently rather than reformatting it forever.
 
