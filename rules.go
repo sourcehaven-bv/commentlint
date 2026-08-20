@@ -29,6 +29,10 @@ func DefaultConfig() Config {
 			"too-long":       true,
 			"untyped":        true,
 			"no-removal":     true,
+			// Opt-in: duplication is a cross-comment rule with its own
+			// output shape (it prints both texts), so it runs instead of
+			// the per-comment rules rather than alongside them.
+			"duplication": false,
 		},
 	}
 }

@@ -33,6 +33,7 @@ The code already says what it does.
 | `untyped` | opt-in | body comment without a `Why:`/`Ref:` prefix (`-require-prefix`) |
 | `too-long` | warning | length as a proxy for reaching upward |
 | `scope-reach` | ranking | comment names identifiers not in scope here |
+| `duplication` | opt-in | the same fact explained in more than one comment |
 
 ## Usage
 
@@ -41,8 +42,53 @@ The code already says what it does.
     commentlint -v ./...               # per-rule counts and corpus stats
     commentlint -rules restatement,commented-code ./...
     commentlint -require-prefix ./...  # enforce Why:/Ref: in bodies
+    commentlint -rules duplication ./...        # facts explained more than once
 
-Tuning: `-max-body-lines` (3), `-max-decl-lines` (5), `-reach-ratio` (0.5).
+Tuning: `-max-body-lines` (3), `-max-decl-lines` (5), `-reach-ratio` (0.5),
+`-dup-overlap` (0.30), `-dup-max-sites` (8), `-dup-same-name`.
+
+## How duplication works
+
+Every other rule judges a comment against its own scope. This one judges it
+against the rest of the corpus, because the failure it targets is invisible
+locally: each copy of a duplicated fact looks fine where it sits.
+
+Comments are split into paragraphs, normalized (lowercased, doc links and
+punctuation dropped, so a re-linked or re-punctuated copy still matches), and
+reduced to 6-word shingles. A shingle index makes the comparison near-linear
+rather than O(n²) on the ~10k comments a mid-sized repo carries. A paragraph
+sharing ≥30% of its shingles with another comment is reported, and transitive
+groups collapse into one finding listing every site.
+
+Two things make it worth acting on:
+
+- **It prints both texts.** You judge the finding from the output; you do not
+  open two files to find out whether it is real. That is what lets a rule with
+  imperfect precision still be useful.
+- **The remedy is concrete.** "Hoist this to the type both cite" is an action.
+  "This comment is too long" is not.
+
+Ranking is by duplicated **volume** (shared shingle count), not by fraction.
+Fraction promotes small twin helpers whose entire doc is two shared sentences;
+volume promotes the cases where hoisting the fact deletes the most text.
+
+Suppressed by default: identically-named declarations. Backends implementing a
+shared interface legitimately repeat the contract — every `store.Store` saying
+"returns store.ErrNotFound if the entity does not exist" is correct, not
+copy-paste. Pass `-dup-same-name` to see them anyway.
+
+### Why not length
+
+`too-long` was the original rule for "this comment is explaining the system."
+It does not work. On a 9.7k-comment corpus it fired 1221 times with a mode of
+exactly one line over the threshold, and its top-ranked finding was a comment
+whose length was the least interesting thing about it. Worse, the highest-value
+comment in that corpus — 28 lines documenting a *verified* sandbox-escape
+limitation, on a one-line function — is the single worst doc:body ratio in the
+repo. Any length or ratio heuristic flags it, and is wrong every time.
+
+Length is a symptom. What actually distinguishes a comment that should be cut
+is that some of it is re-derivable from somewhere else. Measure that instead.
 
 ## How scope-reach works
 

@@ -27,6 +27,13 @@ func main() {
 		verbose  = flag.Bool("v", false, "show per-rule counts and corpus stats")
 		strictPx = flag.Bool("require-prefix", false, "require Why:/Ref: prefixes on body comments")
 	)
+	dupCfg := DefaultDupConfig()
+	flag.Float64Var(&dupCfg.MinOverlap, "dup-overlap", dupCfg.MinOverlap,
+		"fraction of a paragraph that must be shared to report duplication")
+	flag.IntVar(&dupCfg.MaxSites, "dup-max-sites", dupCfg.MaxSites,
+		"a phrase in more than this many comments is shared vocabulary, not duplication")
+	sameName := flag.Bool("dup-same-name", false,
+		"report duplication between identically-named decls (interface implementations)")
 	flag.IntVar(&cfg.MaxBodyLines, "max-body-lines", cfg.MaxBodyLines, "max lines for a comment inside a function body")
 	flag.IntVar(&cfg.MaxUnexpLines, "max-decl-lines", cfg.MaxUnexpLines, "max lines for an unexported decl doc")
 	flag.Float64Var(&cfg.ReachRatio, "reach-ratio", cfg.ReachRatio, "flag when this fraction of informative tokens is out of scope")
@@ -82,14 +89,48 @@ func main() {
 	// Pass 2: check every comment against the scope it is attached to.
 	a := &Analyzer{cfg: cfg, vocab: vocab}
 	var findings []Finding
+	var corpus []Comment
 	total := 0
 	for _, p := range asts {
 		for _, c := range collectComments(fset, p.file, p.name) {
 			if !c.IsDirective {
 				total++
 			}
+			corpus = append(corpus, c)
 			findings = append(findings, a.Check(c)...)
 		}
+	}
+
+	rel := func(path string) string {
+		if wd, err := os.Getwd(); err == nil {
+			if r, err := filepath.Rel(wd, path); err == nil && !strings.HasPrefix(r, "..") {
+				return r
+			}
+		}
+		return path
+	}
+
+	if cfg.Rules["duplication"] {
+		clusters := Cluster(FindDuplication(corpus, dupCfg), *sameName)
+		shown := 0
+		sites := 0
+		for _, c := range clusters {
+			fmt.Print(c.String(rel))
+			shown++
+			sites += len(c.Sites)
+			if *rank && shown >= *top {
+				break
+			}
+		}
+		if shown > 0 {
+			fmt.Printf("\n%d duplicated facts across %d comment sites (corpus: %d comments)\n", shown, sites, total)
+			if !*rank {
+				os.Exit(1)
+			}
+		} else {
+			fmt.Printf("no duplicated paragraphs across %d comments\n", total)
+		}
+		return
 	}
 
 	sort.Slice(findings, func(i, j int) bool {
@@ -125,13 +166,7 @@ func main() {
 		shown = shown[:*top]
 	}
 	for _, f := range shown {
-		rel := f.File
-		if wd, err := os.Getwd(); err == nil {
-			if r, err := filepath.Rel(wd, f.File); err == nil && !strings.HasPrefix(r, "..") {
-				rel = r
-			}
-		}
-		fmt.Printf("%s:%d: [%s/%s] %s\n", rel, f.Line, f.Level, f.Rule, f.Message)
+		fmt.Printf("%s:%d: [%s/%s] %s\n", rel(f.File), f.Line, f.Level, f.Rule, f.Message)
 		fmt.Printf("    │ %s\n", f.Excerpt)
 		if len(f.Outside) > 0 {
 			fmt.Printf("    └ out-of-scope terms: %s\n", strings.Join(f.Outside, ", "))
