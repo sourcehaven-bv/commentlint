@@ -3,6 +3,7 @@ package main
 import (
 	"go/ast"
 	"go/token"
+	"os"
 	"regexp"
 	"strings"
 )
@@ -41,14 +42,18 @@ type Param struct {
 
 // Comment is one comment group with the scope it is attached to.
 type Comment struct {
-	Pos         token.Pos
-	End         token.Pos
-	Level       Level
-	Text        string   // comment text, markers stripped
-	Ident       string   // identifier it documents, if any
-	Scope       []string // identifier tokens in scope at this position
-	Params      []Param  // parameters, when this documents a func decl
-	Results     []string // result leaf type names, when this documents a func decl
+	Pos     token.Pos
+	End     token.Pos
+	Level   Level
+	Text    string   // comment text, markers stripped
+	Ident   string   // identifier it documents, if any
+	Scope   []string // identifier tokens in scope at this position
+	Params  []Param  // parameters, when this documents a func decl
+	Results []string // result leaf type names, when this documents a func decl
+	// Trailer is the source line the comment is attached to. An inline
+	// //commentlint:ignore directive is written there rather than inside the
+	// comment, so suppressing a finding never edits the prose being judged.
+	Trailer     string
 	Lines       int
 	File        string
 	LineNo      int
@@ -78,6 +83,22 @@ var (
 // collectComments walks a file and attaches every comment group to the
 // narrowest scope containing it.
 func collectComments(fset *token.FileSet, f *ast.File, filename string) []Comment {
+	var srcLines []string
+	if b, err := os.ReadFile(filename); err == nil {
+		srcLines = strings.Split(string(b), "\n")
+	}
+	trailerAt := func(g *ast.CommentGroup) string {
+		if srcLines == nil {
+			return ""
+		}
+		// The declaration sits on the line after the comment group ends.
+		n := fset.Position(g.End()).Line
+		if n >= 0 && n < len(srcLines) {
+			return srcLines[n]
+		}
+		return ""
+	}
+
 	if len(f.Comments) > 0 && generatedRe.MatchString(strings.Split(commentRaw(f.Comments[0]), "\n")[0]) {
 		return nil
 	}
@@ -87,7 +108,9 @@ func collectComments(fset *token.FileSet, f *ast.File, filename string) []Commen
 
 	// Package doc.
 	if f.Doc != nil {
-		out = append(out, mkComment(fset, f.Doc, LevelPackage, f.Name.Name, nil, filename))
+		c := mkComment(fset, f.Doc, LevelPackage, f.Name.Name, nil, filename)
+		c.Trailer = trailerAt(f.Doc)
+		out = append(out, c)
 	}
 
 	for node, groups := range cmap {
@@ -97,6 +120,7 @@ func collectComments(fset *token.FileSet, f *ast.File, filename string) []Commen
 			}
 			lvl, ident, scope := classify(node, g, f)
 			c := mkComment(fset, g, lvl, ident, scope, filename)
+			c.Trailer = trailerAt(g)
 			if fd, ok := node.(*ast.FuncDecl); ok && fd.Doc == g {
 				c.Params = paramsOf(fd)
 				c.Results = resultsOf(fd)

@@ -175,6 +175,51 @@ Deliberate limits:
 Because of that last point scope-reach is a **ranking signal**, not a CI gate.
 It orders a cleanup sweep; it should not fail a build.
 
+## Suppressing false positives
+
+Every rule here is a heuristic over prose, so false positives are a permanent
+fact rather than a bug to be fixed once. Two escape hatches, deliberately
+different in blast radius.
+
+**Inline** — preferred for a one-off judgement. It sits where the reader is,
+travels with the code, and is reviewed in the diff that adds it:
+
+```go
+func storeCredentials(repoPath string) error { //commentlint:ignore param-contract  repoPath is contained by Clone
+```
+
+A bare `//commentlint:ignore` suppresses every rule on that declaration; naming
+rules narrows it. Text after the rule list is a reason, encouraged and unparsed.
+The directive goes on the declaration line, not inside the comment, so
+suppressing a finding never edits the prose being judged.
+
+**`.commentlint.yml`** — for policy that would otherwise be repeated at dozens
+of sites. Searched for upward from the scan root:
+
+```yaml
+exclude:
+  - "internal/legacy/**"     # ** matches any number of segments
+  - testdata                 # a bare name matches any path segment
+rules:
+  too-long: false            # off everywhere
+  nil-contract: true
+ignore:
+  nil-contract:
+    - "internal/store/**"    # rule off for these paths only
+allow-phrases:
+  - "non-nil empty slice"    # a house idiom a rule keeps misreading
+settings:
+  max-body-lines: 6
+  dup-overlap: 0.35
+```
+
+`-config <path>` points at a specific file; `-no-config` ignores any. An
+explicit `-rules` flag always beats the file, so a developer can run one rule
+without touching shared config.
+
+For `duplication`, suppressing *either* site drops the pair — the finding names
+two places, and silencing one is a statement that the pairing is not a defect.
+
 ## Deliberately not done
 
 No embeddings or LLM scoring. A CI finding must be deterministic and

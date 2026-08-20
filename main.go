@@ -37,9 +37,46 @@ func main() {
 	flag.IntVar(&cfg.MaxBodyLines, "max-body-lines", cfg.MaxBodyLines, "max lines for a comment inside a function body")
 	flag.IntVar(&cfg.MaxUnexpLines, "max-decl-lines", cfg.MaxUnexpLines, "max lines for an unexported decl doc")
 	flag.Float64Var(&cfg.ReachRatio, "reach-ratio", cfg.ReachRatio, "flag when this fraction of informative tokens is out of scope")
+	confPath := flag.String("config", "", "path to .commentlint.yml (default: nearest one, searching upward)")
+	noConf := flag.Bool("no-config", false, "ignore any .commentlint.yml")
 	flag.Parse()
 
 	cfg.RequirePrefix = *strictPx
+
+	roots := flag.Args()
+	if len(roots) == 0 {
+		roots = []string{"."}
+	}
+
+	fc := &FileConfig{}
+	if !*noConf {
+		var (
+			used string
+			err  error
+		)
+		if *confPath != "" {
+			b, rerr := os.ReadFile(*confPath)
+			if rerr != nil {
+				fmt.Fprintln(os.Stderr, "commentlint:", rerr)
+				os.Exit(2)
+			}
+			fc, err = parseFileConfig(string(b))
+			used = *confPath
+		} else {
+			fc, used, err = LoadFileConfig(roots[0])
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "commentlint:", err)
+			os.Exit(2)
+		}
+		if *verbose && used != "" {
+			fmt.Printf("config: %s\n", used)
+		}
+	}
+	applyFileConfig(&cfg, &dupCfg, fc)
+
+	// -rules is applied last: an explicit flag always beats the file, so a
+	// developer can run a single rule without editing shared config.
 	if *only != "" {
 		for k := range cfg.Rules {
 			cfg.Rules[k] = false
@@ -47,11 +84,6 @@ func main() {
 		for _, r := range strings.Split(*only, ",") {
 			cfg.Rules[strings.TrimSpace(r)] = true
 		}
-	}
-
-	roots := flag.Args()
-	if len(roots) == 0 {
-		roots = []string{"."}
 	}
 
 	files, err := goFiles(roots, *tests)
@@ -87,31 +119,33 @@ func main() {
 	}
 
 	// Pass 2: check every comment against the scope it is attached to.
+	wd, _ := os.Getwd()
 	a := &Analyzer{cfg: cfg, vocab: vocab}
 	var findings []Finding
 	var corpus []Comment
 	total := 0
 	for _, p := range asts {
+		if fc.Excluded(relTo(wd, p.name)) {
+			continue
+		}
 		for _, c := range collectComments(fset, p.file, p.name) {
 			if !c.IsDirective {
 				total++
 			}
 			corpus = append(corpus, c)
-			findings = append(findings, a.Check(c)...)
-		}
-	}
-
-	rel := func(path string) string {
-		if wd, err := os.Getwd(); err == nil {
-			if r, err := filepath.Rel(wd, path); err == nil && !strings.HasPrefix(r, "..") {
-				return r
+			for _, f := range a.Check(c) {
+				if suppressed(fc, f.Rule, relTo(wd, f.File), c.Text+"\n"+c.Trailer) {
+					continue
+				}
+				findings = append(findings, f)
 			}
 		}
-		return path
 	}
 
+	rel := func(path string) string { return relTo(wd, path) }
+
 	if cfg.Rules["param-contract"] {
-		found := FindParamContracts(corpus)
+		found := filterContract(FindParamContracts(corpus), fc, wd)
 		for i, f := range found {
 			if *rank && i >= *top {
 				break
@@ -130,7 +164,7 @@ func main() {
 	}
 
 	if cfg.Rules["nil-contract"] {
-		found := FindNilContracts(corpus)
+		found := filterNil(FindNilContracts(corpus), fc, wd)
 		for i, f := range found {
 			if *rank && i >= *top {
 				break
@@ -149,7 +183,7 @@ func main() {
 	}
 
 	if cfg.Rules["duplication"] {
-		clusters := Cluster(FindDuplication(corpus, dupCfg), *sameName)
+		clusters := Cluster(filterDup(FindDuplication(corpus, dupCfg), fc, wd), *sameName)
 		shown := 0
 		sites := 0
 		for _, c := range clusters {
@@ -263,4 +297,51 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func relTo(wd, path string) string {
+	if wd == "" {
+		return path
+	}
+	if r, err := filepath.Rel(wd, path); err == nil && !strings.HasPrefix(r, "..") {
+		return r
+	}
+	return path
+}
+
+func filterContract(in []ContractFinding, fc *FileConfig, wd string) []ContractFinding {
+	out := in[:0]
+	for _, f := range in {
+		if suppressed(fc, "param-contract", relTo(wd, f.C.File), f.C.Text+"\n"+f.C.Trailer) {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+func filterNil(in []NilFinding, fc *FileConfig, wd string) []NilFinding {
+	out := in[:0]
+	for _, f := range in {
+		if suppressed(fc, "nil-contract", relTo(wd, f.C.File), f.C.Text+"\n"+f.C.Trailer) {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// filterDup drops a pair when EITHER site is suppressed: a duplication finding
+// names two places, and silencing one of them is a statement that the pairing
+// is not a defect.
+func filterDup(in []DupFinding, fc *FileConfig, wd string) []DupFinding {
+	out := in[:0]
+	for _, f := range in {
+		if suppressed(fc, "duplication", relTo(wd, f.A.File), f.A.Text+"\n"+f.A.Trailer) ||
+			suppressed(fc, "duplication", relTo(wd, f.B.File), f.B.Text+"\n"+f.B.Trailer) {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
 }
