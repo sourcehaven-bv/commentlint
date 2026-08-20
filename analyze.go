@@ -32,6 +32,13 @@ func (l Level) String() string {
 	}
 }
 
+// Param is one function parameter: its name and the leaf name of its type.
+// param-contract compares an asserted precondition against these.
+type Param struct {
+	Name string
+	Type string
+}
+
 // Comment is one comment group with the scope it is attached to.
 type Comment struct {
 	Pos         token.Pos
@@ -40,6 +47,7 @@ type Comment struct {
 	Text        string   // comment text, markers stripped
 	Ident       string   // identifier it documents, if any
 	Scope       []string // identifier tokens in scope at this position
+	Params      []Param  // parameters, when this documents a func decl
 	Lines       int
 	File        string
 	LineNo      int
@@ -87,7 +95,11 @@ func collectComments(fset *token.FileSet, f *ast.File, filename string) []Commen
 				continue
 			}
 			lvl, ident, scope := classify(node, g, f)
-			out = append(out, mkComment(fset, g, lvl, ident, scope, filename))
+			c := mkComment(fset, g, lvl, ident, scope, filename)
+			if fd, ok := node.(*ast.FuncDecl); ok && fd.Doc == g {
+				c.Params = paramsOf(fd)
+			}
+			out = append(out, c)
 		}
 	}
 	return out

@@ -34,6 +34,8 @@ The code already says what it does.
 | `too-long` | warning | length as a proxy for reaching upward |
 | `scope-reach` | ranking | comment names identifiers not in scope here |
 | `duplication` | opt-in | the same fact explained in more than one comment |
+| `param-contract` | opt-in | a precondition asserted about a primitively-typed parameter |
+| `nil-contract` | opt-in | nil behaviour written as ad-hoc prose |
 
 ## Usage
 
@@ -43,6 +45,8 @@ The code already says what it does.
     commentlint -rules restatement,commented-code ./...
     commentlint -require-prefix ./...  # enforce Why:/Ref: in bodies
     commentlint -rules duplication ./...        # facts explained more than once
+    commentlint -rules param-contract ./...     # invariants that want a type
+    commentlint -rules nil-contract ./...       # nil contracts to standardize
 
 Tuning: `-max-body-lines` (3), `-max-decl-lines` (5), `-reach-ratio` (0.5),
 `-dup-overlap` (0.30), `-dup-max-sites` (8), `-dup-same-name`.
@@ -76,6 +80,56 @@ Suppressed by default: identically-named declarations. Backends implementing a
 shared interface legitimately repeat the contract — every `store.Store` saying
 "returns store.ErrNotFound if the entity does not exist" is correct, not
 copy-paste. Pass `-dup-same-name` to see them anyway.
+
+## Contract rules
+
+A contract comment is an invariant the compiler is not checking. Writing it
+down is the weakest available enforcement, but the right remedy splits in two,
+so these are two rules rather than one.
+
+### param-contract — the invariant wants a type
+
+Fires when a doc asserts a precondition ("MUST already have passed
+containedPath", "id pre-validated", "must already be escaped") about a
+parameter whose type is a bare `string`/`int`/`[]byte`. Those types carry no
+invariant, so the requirement is enforced by prose and code review alone.
+
+The check is conservative by construction: the assertion must name a parameter
+that actually exists on the function, and that parameter must have a type with
+no room for the invariant. A precondition about an already-structured type is
+not actionable — the type is there and the comment is explaining it. On a
+9.7k-comment corpus this yields 5 findings, all true positives, concentrated in
+security-adjacent code (a credentials path, an app-id lookup, an ACL-gated
+export). Low volume is the point: each one is worth a type.
+
+This is not a new idea imposed on a codebase — it is a codebase's own idea,
+applied unevenly. The corpus this was built against already keeps
+`principal.Principal`'s `roles`/`orgID` unexported so they can only enter
+through a verifying constructor. `param-contract` finds the places that did not
+get the treatment their neighbours did.
+
+### nil-contract — the invariant cannot want a type
+
+Go has no non-nullable pointer, so nil-ness is the one contract category a type
+genuinely cannot fix; a wrapper here is worse than the comment. The remedy is a
+convention instead:
+
+    Nil: rejected — <why>
+    Nil: accepted — <why>
+    Nil: never returned
+
+A tag machines can read, then free prose, because the *why* varies per call
+site and is the part worth keeping. The corpus had eleven different phrasings
+("non-nil", "nil when", "may be nil", "nil disables", ...) for what are really
+three facts: nil is rejected, nil is accepted with a meaning, or nil is never
+returned.
+
+Bare `non-nil` is deliberately NOT matched. It is overwhelmingly used to draw
+the nil-vs-empty-slice distinction, which describes decoding behaviour rather
+than stating a caller contract; matching it produced 93 false positives.
+
+The rule converges: a comment carrying a `Nil:` tag is skipped, so fixing one
+removes it permanently rather than reformatting it forever.
 
 ### Why not length
 

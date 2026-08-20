@@ -110,6 +110,44 @@ func main() {
 		return path
 	}
 
+	if cfg.Rules["param-contract"] {
+		found := FindParamContracts(corpus)
+		for i, f := range found {
+			if *rank && i >= *top {
+				break
+			}
+			fmt.Print(f.String(rel))
+		}
+		if len(found) > 0 {
+			fmt.Printf("\n%d asserted preconditions on unconstrained parameters\n", len(found))
+			if !*rank {
+				os.Exit(1)
+			}
+		} else {
+			fmt.Printf("no asserted preconditions across %d comments\n", total)
+		}
+		return
+	}
+
+	if cfg.Rules["nil-contract"] {
+		found := FindNilContracts(corpus)
+		for i, f := range found {
+			if *rank && i >= *top {
+				break
+			}
+			fmt.Print(f.String(rel))
+		}
+		if len(found) > 0 {
+			fmt.Printf("\n%d nil contracts stated as prose (standard form: `Nil: rejected|accepted|never returned — <why>`)\n", len(found))
+			if !*rank {
+				os.Exit(1)
+			}
+		} else {
+			fmt.Printf("no ad-hoc nil contracts across %d comments\n", total)
+		}
+		return
+	}
+
 	if cfg.Rules["duplication"] {
 		clusters := Cluster(FindDuplication(corpus, dupCfg), *sameName)
 		shown := 0

@@ -33,6 +33,10 @@ func DefaultConfig() Config {
 			// output shape (it prints both texts), so it runs instead of
 			// the per-comment rules rather than alongside them.
 			"duplication": false,
+			// Opt-in for the same reason as duplication: their output
+			// shape differs from the per-comment rules.
+			"param-contract": false,
+			"nil-contract":   false,
 		},
 	}
 }
