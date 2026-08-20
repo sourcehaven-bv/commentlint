@@ -34,6 +34,7 @@ The code already says what it does.
 | `too-long` | warning | length as a proxy for reaching upward |
 | `scope-reach` | ranking | comment names identifiers not in scope here |
 | `duplication` | opt-in | the same fact explained in more than one comment |
+| `doclink` | opt-in | a `[Bracketed.Reference]` that resolves to nothing |
 | `param-contract` | opt-in | a precondition asserted about a primitively-typed parameter |
 | `nil-contract` | opt-in | nil behaviour written as ad-hoc prose |
 
@@ -45,6 +46,7 @@ The code already says what it does.
     commentlint -rules restatement,commented-code ./...
     commentlint -require-prefix ./...  # enforce Why:/Ref: in bodies
     commentlint -rules duplication ./...        # facts explained more than once
+    commentlint -rules doclink ./...            # dead godoc links
     commentlint -rules param-contract ./...     # invariants that want a type
     commentlint -rules nil-contract ./...       # nil contracts to standardize
 
@@ -80,6 +82,36 @@ Suppressed by default: identically-named declarations. Backends implementing a
 shared interface legitimately repeat the contract — every `store.Store` saying
 "returns store.ErrNotFound if the entity does not exist" is correct, not
 copy-paste. Pass `-dup-same-name` to see them anyway.
+
+## doclink — dead godoc links
+
+Go degrades an unresolvable doc link **silently**. `go/doc/comment` keeps it as
+plain text, so pkg.go.dev renders the literal characters `[Set.Enforce]`,
+brackets and all. Verified against `go vet`, `staticcheck` and golangci-lint's
+`godoclint` on a deliberately broken link: all three report zero. The failure is
+invisible precisely because rendering treats it as fine.
+
+The check inverts the stdlib's own resolver rather than reimplementing symbol
+lookup. `comment.Parser` only emits a `DocLink` when `LookupSym` accepts the
+reference; anything it rejects survives as `Plain`. So: parse once WITH a
+resolver built from the package's declarations, then look for bracketed text
+that came back plain. Scoping, receivers and package qualification stay the
+stdlib's problem.
+
+Three failure shapes, each with its own message:
+
+- **missing symbol** — nothing declares it.
+- **bare method** — `[Method]` where Go requires `[Recv.Method]`. The most
+  common shape by far; the finding names the qualified form to use.
+- **pluralized** — `[Option]s`. A link must END at the bracket, so the
+  trailing "s" stops it rendering.
+
+Not reported: builtins (`[any]`, `[string]`), lowercase single words (prose and
+markdown-style placeholders, not package names), and references to packages the
+file does not import. That last exclusion is deliberate — they are usually
+cross-references to a package that *cannot* be imported without a cycle, e.g.
+`[entitymanager.Manager]` named from the `acl` package it calls into. Naming the
+collaborator is the point; the author is not claiming the link renders.
 
 ## Contract rules
 

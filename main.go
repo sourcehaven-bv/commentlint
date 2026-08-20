@@ -144,6 +144,68 @@ func main() {
 
 	rel := func(path string) string { return relTo(wd, path) }
 
+	if cfg.Rules["doclink"] {
+		// Grouped by directory: LookupSym is package-scoped, so resolving a
+		// reference against the whole corpus would accept a symbol that is
+		// not in scope at the comment.
+		byPkg := map[string][]parsed{}
+		var order []string
+		for _, p := range asts {
+			if fc.Excluded(relTo(wd, p.name)) {
+				continue
+			}
+			d := filepath.Dir(p.name)
+			if _, ok := byPkg[d]; !ok {
+				order = append(order, d)
+			}
+			byPkg[d] = append(byPkg[d], p)
+		}
+		sort.Strings(order)
+		// Build the cross-package symbol index first: a reference like
+		// [entitymanager.Manager] is resolved against the package it names,
+		// not the one the comment lives in.
+		corpus := Corpus{}
+		for _, d := range order {
+			files := make([]*ast.File, 0, len(byPkg[d]))
+			for _, p := range byPkg[d] {
+				files = append(files, p.file)
+			}
+			if len(files) > 0 {
+				corpus[files[0].Name.Name] = NewSymbolTable(files)
+			}
+		}
+		var found []DocLinkFinding
+		for _, d := range order {
+			ps := byPkg[d]
+			files := make([]*ast.File, len(ps))
+			names := make([]string, len(ps))
+			for i, p := range ps {
+				files[i], names[i] = p.file, p.name
+			}
+			for _, f := range FindDocLinks(fset, files, names, corpus) {
+				if suppressed(fc, "doclink", relTo(wd, f.File), f.Doc) {
+					continue
+				}
+				found = append(found, f)
+			}
+		}
+		for i, f := range found {
+			if *rank && i >= *top {
+				break
+			}
+			fmt.Print(f.String(rel))
+		}
+		if len(found) > 0 {
+			fmt.Printf("\n%d unresolvable doc links\n", len(found))
+			if !*rank {
+				os.Exit(1)
+			}
+		} else {
+			fmt.Printf("no unresolvable doc links across %d comments\n", total)
+		}
+		return
+	}
+
 	if cfg.Rules["param-contract"] {
 		found := filterContract(FindParamContracts(corpus), fc, wd)
 		for i, f := range found {

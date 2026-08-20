@@ -1,6 +1,7 @@
 package main
 
 import (
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"testing"
@@ -107,4 +108,106 @@ func B() {}
 	if len(got) == 0 {
 		t.Fatal("identical paragraphs in two comments must be reported")
 	}
+}
+
+func TestFindDocLinks(t *testing.T) {
+	parse := func(t *testing.T, src string) ([]*ast.File, *token.FileSet) {
+		t.Helper()
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, "a.go", src, parser.ParseComments)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return []*ast.File{f}, fset
+	}
+	run := func(t *testing.T, src string) []DocLinkFinding {
+		t.Helper()
+		files, fset := parse(t, src)
+		return FindDocLinks(fset, files, []string{"a.go"}, nil)
+	}
+
+	t.Run("valid link is not reported", func(t *testing.T) {
+		got := run(t, `package a
+// Set is a set.
+type Set struct{}
+
+// Compile builds a [Set].
+func Compile() *Set { return nil }
+`)
+		if len(got) != 0 {
+			t.Fatalf("got %+v", got)
+		}
+	})
+
+	t.Run("missing symbol is reported", func(t *testing.T) {
+		got := run(t, `package a
+// Compile references [NoSuchThing].
+func Compile() {}
+`)
+		if len(got) != 1 || got[0].Ref != "NoSuchThing" {
+			t.Fatalf("got %+v", got)
+		}
+	})
+
+	t.Run("bare method reference suggests the receiver", func(t *testing.T) {
+		got := run(t, `package a
+// Thing is a thing.
+type Thing struct{}
+
+// Method does it.
+func (t *Thing) Method() {}
+
+// User references [Method].
+func User() {}
+`)
+		if len(got) != 1 || got[0].Hint != "Thing.Method" {
+			t.Fatalf("want hint Thing.Method, got %+v", got)
+		}
+	})
+
+	t.Run("pluralized link is reported as such", func(t *testing.T) {
+		got := run(t, `package a
+// Option is an option.
+type Option struct{}
+
+// Use takes [Option]s.
+func Use() {}
+`)
+		if len(got) != 1 || got[0].Ref != "Option"+pluralSuffix {
+			t.Fatalf("got %+v", got)
+		}
+	})
+
+	t.Run("builtins and lowercase prose are ignored", func(t *testing.T) {
+		got := run(t, `package a
+// F returns [any] or [string], see [alt] and [vip].
+func F() {}
+`)
+		if len(got) != 0 {
+			t.Fatalf("got %+v", got)
+		}
+	})
+
+	t.Run("reference to an unimported package is not reported", func(t *testing.T) {
+		got := run(t, `package a
+// F is consulted by [entitymanager.Manager] before every write.
+func F() {}
+`)
+		if len(got) != 0 {
+			t.Fatalf("unimportable cross-refs are deliberate; got %+v", got)
+		}
+	})
+
+	t.Run("field reference resolves", func(t *testing.T) {
+		got := run(t, `package a
+// Cfg is config.
+type Cfg struct{ Path string }
+
+// F reads [Cfg.Path].
+func F() {}
+`)
+		if len(got) != 0 {
+			t.Fatalf("struct fields are valid link targets; got %+v", got)
+		}
+	})
 }

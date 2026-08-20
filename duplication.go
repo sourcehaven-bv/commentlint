@@ -313,9 +313,13 @@ func label(c Comment) string {
 // side by side; truncating to one line would throw that away.
 func wrapExcerpt(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
+	// Truncate on RUNES, not bytes: this corpus is full of em dashes and
+	// arrows, and slicing mid-sequence emits invalid UTF-8 that breaks any
+	// tool consuming the output.
 	const width = 200
-	if len(s) > width {
-		s = s[:width-3] + "..."
+	r := []rune(s)
+	if len(r) > width {
+		s = string(r[:width-3]) + "..."
 	}
 	return s
 }

@@ -35,6 +35,7 @@ func DefaultConfig() Config {
 			"duplication": false,
 			// Opt-in for the same reason as duplication: their output
 			// shape differs from the per-comment rules.
+			"doclink":        false,
 			"param-contract": false,
 			"nil-contract":   false,
 		},
@@ -259,8 +260,8 @@ func bodyPrefixHelp() string {
 func excerpt(s string) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.Join(strings.Fields(s), " ")
-	if len(s) > 90 {
-		s = s[:87] + "..."
+	if r := []rune(s); len(r) > 90 {
+		s = string(r[:87]) + "..."
 	}
 	return s
 }
