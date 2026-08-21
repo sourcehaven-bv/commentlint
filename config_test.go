@@ -117,3 +117,41 @@ func TestSuppressed(t *testing.T) {
 		t.Fatal("named directive must not suppress a different rule")
 	}
 }
+
+func TestShowingOf(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		shown, total int
+		want         string
+	}{
+		{"truncated", 40, 119, " — showing 40"},
+		{"complete", 19, 19, ""},
+		{"over (defensive)", 50, 19, ""},
+		{"empty", 0, 0, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := showingOf(tc.shown, tc.total); got != tc.want {
+				t.Fatalf("showingOf(%d, %d) = %q, want %q", tc.shown, tc.total, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestShownCount(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		rank       bool
+		top, total int
+		want       int
+	}{
+		{"rank caps", true, 30, 100, 30},
+		{"rank under cap", true, 40, 19, 19},
+		{"no rank shows all", false, 30, 100, 100},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shownCount(tc.rank, tc.top, tc.total); got != tc.want {
+				t.Fatalf("shownCount(%v, %d, %d) = %d, want %d", tc.rank, tc.top, tc.total, got, tc.want)
+			}
+		})
+	}
+}

@@ -196,7 +196,7 @@ func main() {
 			fmt.Print(f.String(rel))
 		}
 		if len(found) > 0 {
-			fmt.Printf("\n%d unresolvable doc links\n", len(found))
+			fmt.Printf("\n%d unresolvable doc links%s\n", len(found), showingOf(min(len(found), shownCount(*rank, *top, len(found))), len(found)))
 			if !*rank {
 				os.Exit(1)
 			}
@@ -215,7 +215,7 @@ func main() {
 			fmt.Print(f.String(rel))
 		}
 		if len(found) > 0 {
-			fmt.Printf("\n%d asserted preconditions on unconstrained parameters\n", len(found))
+			fmt.Printf("\n%d asserted preconditions on unconstrained parameters%s\n", len(found), showingOf(shownCount(*rank, *top, len(found)), len(found)))
 			if !*rank {
 				os.Exit(1)
 			}
@@ -234,7 +234,7 @@ func main() {
 			fmt.Print(f.String(rel))
 		}
 		if len(found) > 0 {
-			fmt.Printf("\n%d nil contracts stated as prose (standard form: `Nil: rejected|accepted|never returned — <why>`)\n", len(found))
+			fmt.Printf("\n%d nil contracts stated as prose (standard form: `Nil: rejected|accepted|never returned — <why>`)%s\n", len(found), showingOf(shownCount(*rank, *top, len(found)), len(found)))
 			if !*rank {
 				os.Exit(1)
 			}
@@ -257,7 +257,15 @@ func main() {
 			}
 		}
 		if shown > 0 {
-			fmt.Printf("\n%d duplicated facts across %d comment sites (corpus: %d comments)\n", shown, sites, total)
+			// Count the WHOLE result set, not the displayed slice. -top
+			// bounds the output; it must never make the backlog look
+			// smaller than it is.
+			allSites := 0
+			for _, c := range clusters {
+				allSites += len(c.Sites)
+			}
+			fmt.Printf("\n%d duplicated facts across %d comment sites (corpus: %d comments)%s\n",
+				len(clusters), allSites, total, showingOf(shown, len(clusters)))
 			if !*rank {
 				os.Exit(1)
 			}
@@ -309,7 +317,8 @@ func main() {
 
 	if len(findings) > 0 {
 		pct := 100 * float64(len(findings)) / float64(max(total, 1))
-		fmt.Printf("\n%d findings across %d comments (%.1f%%)\n", len(findings), total, pct)
+		fmt.Printf("\n%d findings across %d comments (%.1f%%)%s\n", len(findings), total, pct,
+			showingOf(len(shown), len(findings)))
 		if !*rank {
 			os.Exit(1)
 		}
@@ -406,4 +415,22 @@ func filterDup(in []DupFinding, fc *FileConfig, wd string) []DupFinding {
 		out = append(out, f)
 	}
 	return out
+}
+
+// showingOf annotates a summary when -top hid part of the result set. A report
+// that silently truncates reads as "this is everything", which is exactly the
+// wrong impression for a backlog someone is tracking over time.
+func showingOf(shown, total int) string {
+	if shown >= total {
+		return ""
+	}
+	return fmt.Sprintf(" — showing %d", shown)
+}
+
+// shownCount is how many findings -top left visible.
+func shownCount(rank bool, top, total int) int {
+	if rank && top < total {
+		return top
+	}
+	return total
 }
