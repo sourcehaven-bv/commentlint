@@ -300,7 +300,10 @@ func unresolved(p *comment.Parser, text string) []string {
 		for _, t := range ts {
 			switch v := t.(type) {
 			case comment.Plain:
-				for _, m := range bracketRe.FindAllStringSubmatch(string(v), -1) {
+				// Backticked spans are prose about syntax, not links. A
+				// comment explaining markdown ("a `[Title](url)` splice")
+				// is not claiming [Title] resolves to anything.
+				for _, m := range bracketRe.FindAllStringSubmatch(stripBackticked(string(v)), -1) {
 					ref := m[1]
 					if m[2] != "" {
 						// [X]s: Go requires the bracket to end the token,
@@ -340,6 +343,28 @@ func unresolved(p *comment.Parser, text string) []string {
 	}
 	sort.Strings(refs)
 	return refs
+}
+
+// stripBackticked blanks out `...` spans, preserving length so nothing else
+// shifts. Go doc comments have no inline-code syntax, so the backticks reach
+// us as literal characters in Plain text.
+func stripBackticked(s string) string {
+	out := []byte(s)
+	open := -1
+	for i := 0; i < len(out); i++ {
+		if out[i] != '`' {
+			continue
+		}
+		if open < 0 {
+			open = i
+			continue
+		}
+		for j := open; j <= i; j++ {
+			out[j] = ' '
+		}
+		open = -1
+	}
+	return string(out)
 }
 
 // isNotASymbol filters bracketed text that was never meant as a doc link:

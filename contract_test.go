@@ -211,3 +211,17 @@ func F() {}
 		}
 	})
 }
+
+func TestStripBackticked(t *testing.T) {
+	for _, tc := range []struct{ name, in, want string }{
+		{"span blanked", "a `[Title](url)` splice", "a                splice"},
+		{"unclosed left alone", "a `[Title] splice", "a `[Title] splice"},
+		{"no backticks", "see [Foo]", "see [Foo]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := stripBackticked(tc.in); got != tc.want {
+				t.Fatalf("stripBackticked(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
