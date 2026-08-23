@@ -198,7 +198,7 @@ func main() {
 		if len(found) > 0 {
 			fmt.Printf("\n%d unresolvable doc links%s\n", len(found), showingOf(min(len(found), shownCount(*rank, *top, len(found))), len(found)))
 			if !*rank {
-				os.Exit(1)
+				failWithGuidance("doclink")
 			}
 		} else {
 			fmt.Printf("no unresolvable doc links across %d comments\n", total)
@@ -217,7 +217,7 @@ func main() {
 		if len(found) > 0 {
 			fmt.Printf("\n%d asserted preconditions on unconstrained parameters%s\n", len(found), showingOf(shownCount(*rank, *top, len(found)), len(found)))
 			if !*rank {
-				os.Exit(1)
+				failWithGuidance("param-contract")
 			}
 		} else {
 			fmt.Printf("no asserted preconditions across %d comments\n", total)
@@ -236,7 +236,7 @@ func main() {
 		if len(found) > 0 {
 			fmt.Printf("\n%d nil contracts stated as prose (standard form: `Nil: rejected|accepted|never returned — <why>`)%s\n", len(found), showingOf(shownCount(*rank, *top, len(found)), len(found)))
 			if !*rank {
-				os.Exit(1)
+				failWithGuidance("nil-contract")
 			}
 		} else {
 			fmt.Printf("no ad-hoc nil contracts across %d comments\n", total)
@@ -267,7 +267,7 @@ func main() {
 			fmt.Printf("\n%d duplicated facts across %d comment sites (corpus: %d comments)%s\n",
 				len(clusters), allSites, total, showingOf(shown, len(clusters)))
 			if !*rank {
-				os.Exit(1)
+				failWithGuidance("duplication")
 			}
 		} else {
 			fmt.Printf("no duplicated paragraphs across %d comments\n", total)
@@ -320,7 +320,7 @@ func main() {
 		fmt.Printf("\n%d findings across %d comments (%.1f%%)%s\n", len(findings), total, pct,
 			showingOf(len(shown), len(findings)))
 		if !*rank {
-			os.Exit(1)
+			failWithGuidance(firedRules(findings))
 		}
 	} else {
 		fmt.Printf("no findings across %d comments\n", total)
@@ -433,4 +433,20 @@ func shownCount(rank bool, top, total int) int {
 		return top
 	}
 	return total
+}
+
+// firedRules names the rules present in a finding set, for the suppression
+// example in the failure message. With several it lists them comma-separated
+// so the reader can see which one to name in a directive.
+func firedRules(findings []Finding) string {
+	seen := map[string]bool{}
+	var out []string
+	for _, f := range findings {
+		if !seen[f.Rule] {
+			seen[f.Rule] = true
+			out = append(out, f.Rule)
+		}
+	}
+	sort.Strings(out)
+	return strings.Join(out, ",")
 }

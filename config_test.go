@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseFileConfig(t *testing.T) {
 	src := `
@@ -151,6 +154,45 @@ func TestShownCount(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := shownCount(tc.rank, tc.top, tc.total); got != tc.want {
 				t.Fatalf("shownCount(%v, %d, %d) = %d, want %d", tc.rank, tc.top, tc.total, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGuidance(t *testing.T) {
+	g := guidance("doclink")
+	// The rule name must appear in the copy-pasteable directive, or the
+	// reader has to work out the syntax themselves at the moment they are
+	// most tempted to reach for a blanket suppression.
+	if !strings.Contains(g, "//commentlint:ignore doclink") {
+		t.Fatalf("guidance must show the directive for the rule that fired:\n%s", g)
+	}
+	// Fixing must be presented before suppressing.
+	fix := strings.Index(g, "fix the comment")
+	sup := strings.Index(g, "suppress it")
+	if fix < 0 || sup < 0 || fix > sup {
+		t.Fatalf("guidance must lead with fixing, not suppressing:\n%s", g)
+	}
+	if !strings.Contains(g, "not one") {
+		t.Fatal("guidance must reject 'to unblock CI' as a reason")
+	}
+}
+
+func TestFiredRules(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   []Finding
+		want string
+	}{
+		{"single", []Finding{{Rule: "restatement"}}, "restatement"},
+		{"deduped and sorted", []Finding{
+			{Rule: "restatement"}, {Rule: "commented-code"}, {Rule: "restatement"},
+		}, "commented-code,restatement"},
+		{"empty", nil, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := firedRules(tc.in); got != tc.want {
+				t.Fatalf("firedRules = %q, want %q", got, tc.want)
 			}
 		})
 	}

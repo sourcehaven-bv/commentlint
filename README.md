@@ -207,6 +207,22 @@ Deliberate limits:
 Because of that last point scope-reach is a **ranking signal**, not a CI gate.
 It orders a cleanup sweep; it should not fail a build.
 
+## Blocking runs
+
+Without `-rank`, a rule that finds anything exits non-zero and prints guidance
+on what to do about it. The guidance leads with *reading* the finding and
+presents suppression as the second option, naming the rule so the directive is
+copy-pasteable.
+
+That framing is deliberate. A blocking linter with an easy escape hatch has one
+predictable failure mode: the cheapest path to green is to silence the finding,
+and a reviewer skimming a diff cannot distinguish a considered suppression from
+a reflex one. The message asks for a reason that says why the finding is
+*wrong* — because "suppressed to unblock CI" is exactly the reason that should
+not survive review.
+
+`-rank` makes any run advisory (exit 0), for worklists.
+
 ## Suppressing false positives
 
 Every rule here is a heuristic over prose, so false positives are a permanent
